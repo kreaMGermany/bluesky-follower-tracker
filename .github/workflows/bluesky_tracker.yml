@@ -25,4 +25,12 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run tracker
+        env:
+          TENANT_ID: ${{ secrets.TENANT_ID }}
+          CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+          SENDER_UPN: ${{ secrets.SENDER_UPN }}
+          RECIPIENTS: ${{ secrets.RECIPIENTS }}
+          ONEDRIVE_FILE_PATH: ${{ secrets.ONEDRIVE_FILE_PATH }}
+          ACCOUNTS_JSON: ${{ secrets.ACCOUNTS_JSON }}
         run: python tracker.py
