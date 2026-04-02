@@ -32,7 +32,7 @@ def get_followers(handle):
 
 
 def send_mail(token, sender, recipients, subject, html):
-    to_recipients = [{"emailAddress": {"address": r.strip()}} for r in recipients.split(",")]
+    to_recipients = [{"emailAddress": {"address": r.strip()}} for r in recipients.split(",") if r.strip()]
 
     url = f"{GRAPH}/users/{sender}/sendMail"
 
@@ -44,14 +44,20 @@ def send_mail(token, sender, recipients, subject, html):
                 "content": html
             },
             "toRecipients": to_recipients
-        }
+        },
+        "saveToSentItems": True
     }
 
-    requests.post(
+    r = requests.post(
         url,
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         json=payload
-    ).raise_for_status()
+    )
+
+    print("MAIL STATUS:", r.status_code)
+    print("MAIL RESPONSE:", r.text)
+
+    r.raise_for_status()
 
 
 def main():
