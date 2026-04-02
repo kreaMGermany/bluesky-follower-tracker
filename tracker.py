@@ -80,15 +80,25 @@ def main():
 
     history = {}
 
-    for r in rows_data["value"]:
-        vals = r["values"][0]
-        d = vals[0]
-        acc = vals[1].replace("'", "")
-        foll = int(vals[2])
+for r in rows_data["value"]:
+    vals = r["values"][0]
 
-        history.setdefault(acc, []).append((d, foll))
+    if len(vals) < 3:
+        continue
 
-    results = []
+    d = vals[0]
+    acc = str(vals[1]).replace("'", "").strip()
+    foll_raw = str(vals[2]).strip()
+
+    if not acc or not foll_raw:
+        continue
+
+    try:
+        foll = int(float(foll_raw))
+    except:
+        continue
+
+    history.setdefault(acc, []).append((d, foll))
 
     for acc in accounts:
         handle = acc["handle"]
