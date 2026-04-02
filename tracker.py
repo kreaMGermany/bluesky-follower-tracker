@@ -1,36 +1,50 @@
-name: Bluesky Tracker
+import os
+import json
+import requests
+from datetime import datetime
+from msal import ConfidentialClientApplication
 
-on:
-  schedule:
-    - cron: '0 7 * * *'
-  workflow_dispatch:
+GRAPH = "https://graph.microsoft.com/v1.0"
 
-jobs:
-  run:
-    runs-on: ubuntu-latest
 
-    permissions:
-      contents: read
+def getenv(name):
+    v = os.getenv(name)
+    if not v:
+        raise RuntimeError(f"Missing env var: {name}")
+    return v
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+def get_token():
+    app = ConfidentialClientApplication(
+        getenv("CLIENT_ID"),
+        authority=f"https://login.microsoftonline.com/{getenv('TENANT_ID')}",
+        client_credential=getenv("CLIENT_SECRET"),
+    )
+    token = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
+    return token["access_token"]
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
 
-      - name: Run tracker
-        env:
-          TENANT_ID: ${{ secrets.TENANT_ID }}
-          CLIENT_ID: ${{ secrets.CLIENT_ID }}
-          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-          SENDER_UPN: ${{ secrets.SENDER_UPN }}
-          RECIPIENTS: ${{ secrets.RECIPIENTS }}
-          ONEDRIVE_FILE_PATH: ${{ secrets.ONEDRIVE_FILE_PATH }}
-          ACCOUNTS_JSON: ${{ secrets.ACCOUNTS_JSON }}
-        run: python tracker.py
+def get_followers(handle):
+    url = f"https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor={handle}"
+    r = requests.get(url)
+    r.raise_for_status()
+    return r.json()["followersCount"]
+
+
+def main():
+    accounts = json.loads(getenv("ACCOUNTS_JSON"))
+    token = get_token()
+
+    rows = []
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+
+    for acc in accounts:
+        handle = acc["handle"]
+        followers = get_followers(handle)
+        rows.append((handle, followers))
+
+    print(rows)
+
+
+if __name__ == "__main__":
+    main()
