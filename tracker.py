@@ -31,17 +31,54 @@ def get_followers(handle):
     return r.json()["followersCount"]
 
 
+def send_mail(token, sender, recipients, subject, html):
+    to_recipients = [{"emailAddress": {"address": r.strip()}} for r in recipients.split(",")]
+
+    url = f"{GRAPH}/users/{sender}/sendMail"
+
+    payload = {
+        "message": {
+            "subject": subject,
+            "body": {
+                "contentType": "HTML",
+                "content": html
+            },
+            "toRecipients": to_recipients
+        }
+    }
+
+    requests.post(
+        url,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        json=payload
+    ).raise_for_status()
+
+
 def main():
     accounts = json.loads(getenv("ACCOUNTS_JSON"))
     token = get_token()
 
-    rows = []
     today = datetime.utcnow().strftime("%Y-%m-%d")
+
+    rows = []
+    html = "<h2>Bluesky Report</h2><table border='1'><tr><th>Account</th><th>Followers</th></tr>"
 
     for acc in accounts:
         handle = acc["handle"]
         followers = get_followers(handle)
+
         rows.append((handle, followers))
+        html += f"<tr><td>{handle}</td><td>{followers}</td></tr>"
+
+    html += "</table>"
+
+    send_mail(
+        token,
+        getenv("SENDER_UPN"),
+        getenv("RECIPIENTS"),
+        f"Bluesky Report {today}",
+        html
+    )
 
     print(rows)
 
