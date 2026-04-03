@@ -1,7 +1,7 @@
 import os
 import json
 import requests
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from msal import ConfidentialClientApplication
 
 GRAPH = "https://graph.microsoft.com/v1.0"
@@ -76,6 +76,30 @@ def send_mail(token, sender, recipients, subject, html):
     graph_post(token, f"{GRAPH}/users/{sender}/sendMail", payload)
 
 
+def parse_excel_date(value):
+    if value is None:
+        return None
+
+    if isinstance(value, (int, float)):
+        base = date(1899, 12, 30)
+        return base + timedelta(days=int(float(value)))
+
+    s = str(value).strip()
+    if not s:
+        return None
+
+    if "T" in s:
+        s = s[:10]
+
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            pass
+
+    return None
+
+
 def fmt_int(n):
     if n is None:
         return "n/a"
@@ -118,7 +142,7 @@ def build_html(today, results):
         delta_color = "#0a7f2e" if r["delta"] is not None and r["delta"] > 0 else "#b00020" if r["delta"] is not None and r["delta"] < 0 else "#111111"
         pct_color = "#0a7f2e" if r["delta_pct"] is not None and r["delta_pct"] > 0 else "#b00020" if r["delta_pct"] is not None and r["delta_pct"] < 0 else "#111111"
 
-        base_date = r["base_date"] if r["base_date"] else "n/a"
+        base_date = r["base_date"].strftime("%d.%m.%Y") if r["base_date"] else "n/a"
 
         rows += f"""
         <tr>
@@ -135,7 +159,7 @@ def build_html(today, results):
     html = f"""
     <html>
       <body style="font-family:Segoe UI, Arial, sans-serif; color:#111;">
-        <h2 style="margin:0 0 8px 0;">Bluesky Report {today}</h2>
+        <h2 style="margin:0 0 8px 0;">Bluesky Report {today.strftime("%Y-%m-%d")}</h2>
         <div style="margin:0 0 18px 0;color:#444;">
           Delta = Vergleich zum letzten verfügbaren Eintrag vor heute
         </div>
@@ -173,7 +197,7 @@ def main():
     path = getenv("ONEDRIVE_FILE_PATH")
     accounts = json.loads(getenv("ACCOUNTS_JSON"))
 
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.utcnow().date()
 
     file_meta = graph_get(token, f"{GRAPH}/users/{sender}/drive/root:/{path}")
     file_id = file_meta["id"]
@@ -196,7 +220,7 @@ def main():
         if len(vals) < 3:
             continue
 
-        d = str(vals[0]).strip()
+        d = parse_excel_date(vals[0])
         acc = str(vals[1]).replace("'", "").strip()
         foll_raw = str(vals[2]).strip()
 
@@ -242,11 +266,11 @@ def main():
         token,
         sender,
         recipients,
-        f"Bluesky Report {today}",
+        f"Bluesky Report {today.strftime('%Y-%m-%d')}",
         html
     )
 
-    values = [[today, "'" + r["account"], r["followers"]] for r in results]
+    values = [[today.isoformat(), "'" + r["account"], r["followers"]] for r in results]
 
     graph_post(
         token,
