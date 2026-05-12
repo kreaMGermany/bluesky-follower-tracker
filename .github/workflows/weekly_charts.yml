@@ -1,0 +1,38 @@
+name: Bluesky Weekly Charts
+
+on:
+  schedule:
+    - cron: '0 7 * * 1'  # Every Monday at 07:00 UTC
+  workflow_dispatch:       # Manual trigger anytime
+
+jobs:
+  weekly-charts:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests msal matplotlib pillow openpyxl
+
+      - name: Download kreaM Logo
+        env:
+          LOGO_URL: ${{ secrets.KREAM_LOGO_URL }}
+        run: |
+          curl -L "$LOGO_URL" -o kream_logo.jpg
+
+      - name: Run Chart Mailer
+        env:
+          TENANT_ID: ${{ secrets.TENANT_ID }}
+          CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+          SENDER_UPN: ${{ secrets.SENDER_UPN }}
+          RECIPIENTS: ${{ secrets.RECIPIENTS }}
+          ONEDRIVE_FILE_PATH: ${{ secrets.ONEDRIVE_FILE_PATH }}
+        run: python chart_mailer.py
