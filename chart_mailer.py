@@ -113,8 +113,8 @@ def make_individual_chart(handle, name, day_data, logo_arr, tmpdir):
 
     fig.text(0.07, 0.90, name, color=TEXT, fontsize=21, fontweight='bold', transform=fig.transFigure)
     fig.text(0.07, 0.83, f'@{handle}', color=TEXT2, fontsize=10, transform=fig.transFigure)
-    fig.text(0.62, 0.90, f'{end:,} Follower'.replace(',', '.'), color=TEXT, fontsize=14, fontweight='bold', transform=fig.transFigure)
-    fig.text(0.62, 0.83, f'+{growth:,} Follower   +{pct:.0f}% seit Start'.replace(',', '.'), color=GREEN, fontsize=10, transform=fig.transFigure)
+    fig.text(0.62, 0.90, f'{end:,} Followers'.replace(',', '.'), color=TEXT, fontsize=14, fontweight='bold', transform=fig.transFigure)
+    fig.text(0.62, 0.83, f'+{growth:,} Follower   +{pct:.0f}% since start'.replace(',', '.'), color=GREEN, fontsize=10, transform=fig.transFigure)
     period = f'{dates[0].strftime("%d.%m.%Y")} – {dates[-1].strftime("%d.%m.%Y")}'
     fig.text(0.07, 0.03, period, color=TEXT2, fontsize=8, transform=fig.transFigure)
 
@@ -173,7 +173,7 @@ def make_overview_chart(all_data, display_names, logo_arr, tmpdir):
             fontweight='bold', color=color, va='center')
 
     today = datetime.utcnow().date()
-    fig.text(0.05, 0.93, 'Bluesky Follower Übersicht', color=TEXT, fontsize=18, fontweight='bold', transform=fig.transFigure)
+    fig.text(0.05, 0.93, 'Bluesky Follower Overview', color=TEXT, fontsize=18, fontweight='bold', transform=fig.transFigure)
     period = f'{min(all_dates).strftime("%d.%m.%Y")} – {max(all_dates).strftime("%d.%m.%Y")}'
     fig.text(0.05, 0.87, period, color=TEXT2, fontsize=10, transform=fig.transFigure)
 
@@ -240,7 +240,7 @@ def build_model_html(name, handle, end_followers, growth, pct, period):
     return f"""
     <html>
       <body style="font-family:Segoe UI, Arial, sans-serif; color:#111; background:#f9f9f9; padding:24px;">
-        <h2 style="margin:0 0 4px 0;">Dein wöchentlicher Bluesky Report</h2>
+        <h2 style="margin:0 0 4px 0;">Your Weekly Bluesky Report</h2>
         <p style="color:#555; margin:0 0 20px 0;">{period}</p>
         <table style="border-collapse:collapse; width:400px;">
           <tr>
@@ -248,15 +248,15 @@ def build_model_html(name, handle, end_followers, growth, pct, period):
             <td style="padding:10px 16px; background:#f0f0f0;">@{handle}</td>
           </tr>
           <tr>
-            <td style="padding:10px 16px; background:#E8E8E8; font-weight:600;">Follower</td>
+            <td style="padding:10px 16px; background:#E8E8E8; font-weight:600;">Followers</td>
             <td style="padding:10px 16px; background:#f0f0f0;">{end_followers:,}".replace(",",".")</td>
           </tr>
           <tr>
-            <td style="padding:10px 16px; background:#E8E8E8; font-weight:600;">Wachstum</td>
+            <td style="padding:10px 16px; background:#E8E8E8; font-weight:600;">Growth</td>
             <td style="padding:10px 16px; background:#f0f0f0; color:#1e7d1e; font-weight:700;">+{growth:,} ({pct:.0f}%)".replace(",",".")</td>
           </tr>
         </table>
-        <p style="margin:20px 0 4px 0; color:#555; font-size:13px;">Deine Wachstumskurve findest du im Anhang.</p>
+        <p style="margin:20px 0 4px 0; color:#555; font-size:13px;">Your growth chart is attached.</p>
         <p style="color:#555; font-size:12px; margin-top:24px;">kreaM Management</p>
       </body>
     </html>
@@ -287,7 +287,7 @@ def build_manager_html(today, all_data, display_names):
     <html>
       <body style="font-family:Segoe UI, Arial, sans-serif; color:#111; background:#f9f9f9; padding:24px;">
         <h2 style="margin:0 0 4px 0;">Bluesky Weekly Overview – {today.strftime("%d.%m.%Y")}</h2>
-        <p style="color:#555; margin:0 0 20px 0;">Alle Models im Überblick. Wachstum seit Tracking-Start.</p>
+        <p style="color:#555; margin:0 0 20px 0;">All models at a glance. Growth since tracking start.</p>
         <table style="border-collapse:collapse; width:700px; max-width:100%;">
           <thead>
             <tr style="background:#E8E8E8;">
@@ -300,7 +300,7 @@ def build_manager_html(today, all_data, display_names):
           </thead>
           <tbody>{rows}</tbody>
         </table>
-        <p style="color:#555; font-size:12px; margin-top:24px;">Übersichtschart im Anhang.</p>
+        <p style="color:#555; font-size:12px; margin-top:24px;">Overview chart attached.</p>
       </body>
     </html>
     """.replace('".replace(",",".")', '')
@@ -396,7 +396,7 @@ def main():
             period = f'{dates[0].strftime("%d.%m.%Y")} – {dates[-1].strftime("%d.%m.%Y")}'
 
             html = build_model_html(name, handle, end, growth, pct, period)
-            subject = f"Dein Bluesky Wachstum – {today.strftime('%d.%m.%Y')}"
+            subject = f"Your Bluesky Growth – {today.strftime('%d.%m.%Y')}"
 
             send_mail_with_attachment(token, sender, email, manager_emails, subject, html, chart_path)
             print(f"✓ Mail sent to {name} ({email})")
