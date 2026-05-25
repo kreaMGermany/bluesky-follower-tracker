@@ -20,6 +20,7 @@ TEXT = '#111111'
 TEXT2 = '#555555'
 GRID = '#cccccc'
 GREEN = '#1e7d1e'
+RED = '#cc0000'
 
 COLORS = [
     '#1a1a1a', '#0077C8', '#CC3399', '#3DAA3D',
@@ -90,14 +91,70 @@ def load_logo():
     return None
 
 
-def make_individual_chart(handle, name, day_data, logo_arr, tmpdir):
-    """Generate individual model chart. Returns file path."""
+def week_stats(day_data, today):
+    """Berechnet Wochen-Kennzahlen aus dem Follower-Verlauf.
+
+    'Diese Woche' = letzte 7 Tage (today - 7).
+    Als Wochenstart-Wert wird der letzte Log-Eintrag genommen, der
+    am oder vor (today - 7) liegt. Gibt es keinen, wird der erste
+    vorhandene Eintrag verwendet.
+
+    Returns dict mit:
+      end            aktueller Followerstand
+      week_start     Followerstand vor 7 Tagen
+      week_growth    Delta letzte 7 Tage
+      week_pct       Delta % letzte 7 Tage
+      total_start    erster Eintrag (Tracking-Start)
+      total_growth   Delta seit Tracking-Start
+      total_pct      Delta % seit Tracking-Start
+    """
     sorted_days = sorted(day_data.items())
     dates = [d for d, _ in sorted_days]
     followers = [f for _, f in sorted_days]
-    start, end = followers[0], followers[-1]
-    growth = end - start
-    pct = growth / start * 100 if start > 0 else 0
+
+    end = followers[-1]
+    total_start = followers[0]
+    total_growth = end - total_start
+    total_pct = total_growth / total_start * 100 if total_start > 0 else 0
+
+    cutoff = today - timedelta(days=7)
+    week_start = None
+    for d, f in sorted_days:
+        if d <= cutoff:
+            week_start = f
+    if week_start is None:
+        week_start = total_start
+
+    week_growth = end - week_start
+    week_pct = week_growth / week_start * 100 if week_start > 0 else 0
+
+    return {
+        "dates": dates,
+        "followers": followers,
+        "end": end,
+        "week_start": week_start,
+        "week_growth": week_growth,
+        "week_pct": week_pct,
+        "total_start": total_start,
+        "total_growth": total_growth,
+        "total_pct": total_pct,
+    }
+
+
+def fmt_signed(n):
+    """Zahl mit Vorzeichen und Tausenderpunkt: 1234 -> '+1.234', -5 -> '-5'."""
+    s = f'{abs(int(n)):,}'.replace(',', '.')
+    return f'+{s}' if n >= 0 else f'-{s}'
+
+
+def make_individual_chart(handle, name, day_data, today, logo_arr, tmpdir):
+    """Generate individual model chart. Returns file path."""
+    st = week_stats(day_data, today)
+    dates = st["dates"]
+    followers = st["followers"]
+    end = st["end"]
+    growth = st["week_growth"]
+    pct = st["week_pct"]
 
     fig, ax = plt.subplots(figsize=(11, 5.5))
     fig.patch.set_facecolor(BG)
@@ -111,10 +168,12 @@ def make_individual_chart(handle, name, day_data, logo_arr, tmpdir):
         textcoords='offset points', fontsize=11,
         fontweight='bold', color=ACCENT, va='center')
 
+    growth_color = GREEN if growth >= 0 else RED
     fig.text(0.07, 0.90, name, color=TEXT, fontsize=21, fontweight='bold', transform=fig.transFigure)
     fig.text(0.07, 0.83, f'@{handle}', color=TEXT2, fontsize=10, transform=fig.transFigure)
     fig.text(0.62, 0.90, f'{end:,} Followers'.replace(',', '.'), color=TEXT, fontsize=14, fontweight='bold', transform=fig.transFigure)
-    fig.text(0.62, 0.83, f'+{growth:,} Follower   +{pct:.0f}% since start'.replace(',', '.'), color=GREEN, fontsize=10, transform=fig.transFigure)
+    fig.text(0.62, 0.83, f'{fmt_signed(growth)} Follower diese Woche ({fmt_signed(round(pct,1))}%)',
+             color=growth_color, fontsize=10, transform=fig.transFigure)
     period = f'{dates[0].strftime("%d.%m.%Y")} – {dates[-1].strftime("%d.%m.%Y")}'
     fig.text(0.07, 0.03, period, color=TEXT2, fontsize=8, transform=fig.transFigure)
 
@@ -236,7 +295,10 @@ def send_mail_with_attachment(token, sender, to_email, cc_emails, subject, html,
     graph_post(token, f"{GRAPH}/users/{sender}/sendMail", payload)
 
 
-def build_model_html(name, handle, end_followers, growth, pct, period):
+def build_model_html(name, handle, end_followers, week_growth, week_pct, period):
+    fmt_end = f'{end_followers:,}'.replace(',', '.')
+    fmt_growth = f'{fmt_signed(week_growth)} ({fmt_signed(round(week_pct,1))}%)'
+    growth_color = '#1e7d1e' if week_growth >= 0 else '#cc0000'
     return f"""
     <html>
       <body style="font-family:Segoe UI, Arial, sans-serif; color:#111; background:#f9f9f9; padding:24px;">
@@ -249,53 +311,55 @@ def build_model_html(name, handle, end_followers, growth, pct, period):
           </tr>
           <tr>
             <td style="padding:10px 16px; background:#E8E8E8; font-weight:600;">Followers</td>
-            <td style="padding:10px 16px; background:#f0f0f0;">{end_followers:,}".replace(",",".")</td>
+            <td style="padding:10px 16px; background:#f0f0f0;">{fmt_end}</td>
           </tr>
           <tr>
-            <td style="padding:10px 16px; background:#E8E8E8; font-weight:600;">Growth</td>
-            <td style="padding:10px 16px; background:#f0f0f0; color:#1e7d1e; font-weight:700;">+{growth:,} ({pct:.0f}%)".replace(",",".")</td>
+            <td style="padding:10px 16px; background:#E8E8E8; font-weight:600;">Growth this week</td>
+            <td style="padding:10px 16px; background:#f0f0f0; color:{growth_color}; font-weight:700;">{fmt_growth}</td>
           </tr>
         </table>
         <p style="margin:20px 0 4px 0; color:#555; font-size:13px;">Your growth chart is attached.</p>
         <p style="color:#555; font-size:12px; margin-top:24px;">kreaM Management</p>
       </body>
     </html>
-    """.replace('".replace(",",".")', '')
+    """
 
 
 def build_manager_html(today, all_data, display_names):
     rows = ""
     sorted_accounts = sorted(all_data.items(), key=lambda x: max(x[1].values()), reverse=True)
     for handle, day_data in sorted_accounts:
-        sorted_days = sorted(day_data.items())
-        followers = [f for _, f in sorted_days]
-        start, end = followers[0], followers[-1]
-        growth = end - start
-        pct = growth / start * 100 if start > 0 else 0
+        st = week_stats(day_data, today)
         name = display_names.get(handle, handle)
-        color = '#1e7d1e' if growth >= 0 else '#cc0000'
+        wk_color = '#1e7d1e' if st["week_growth"] >= 0 else '#cc0000'
+        tot_color = '#1e7d1e' if st["total_growth"] >= 0 else '#cc0000'
+        fmt_end = f'{st["end"]:,}'.replace(',', '.')
         rows += f"""
         <tr>
           <td style="padding:10px 8px;border-bottom:1px solid #ddd;font-weight:600;">{name}</td>
           <td style="padding:10px 8px;border-bottom:1px solid #ddd;color:#555;font-size:12px;">@{handle}</td>
-          <td style="padding:10px 8px;border-bottom:1px solid #ddd;text-align:right;">{end:,}".replace(",",".")</td>
-          <td style="padding:10px 8px;border-bottom:1px solid #ddd;text-align:right;color:{color};font-weight:700;">+{growth:,}".replace(",",".")</td>
-          <td style="padding:10px 8px;border-bottom:1px solid #ddd;text-align:right;color:{color};font-weight:700;">+{pct:.0f}%</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #ddd;text-align:right;">{fmt_end}</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #ddd;text-align:right;color:{wk_color};font-weight:700;">{fmt_signed(st["week_growth"])}</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #ddd;text-align:right;color:{wk_color};font-weight:700;">{fmt_signed(round(st["week_pct"],1))}%</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #ddd;text-align:right;color:{tot_color};">{fmt_signed(st["total_growth"])}</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #ddd;text-align:right;color:{tot_color};">{fmt_signed(round(st["total_pct"],1))}%</td>
         </tr>
         """
     return f"""
     <html>
       <body style="font-family:Segoe UI, Arial, sans-serif; color:#111; background:#f9f9f9; padding:24px;">
         <h2 style="margin:0 0 4px 0;">Bluesky Weekly Overview – {today.strftime("%d.%m.%Y")}</h2>
-        <p style="color:#555; margin:0 0 20px 0;">All models at a glance. Growth since tracking start.</p>
-        <table style="border-collapse:collapse; width:700px; max-width:100%;">
+        <p style="color:#555; margin:0 0 20px 0;">Wochen-Wachstum (letzte 7 Tage) und Gesamt-Wachstum seit Tracking-Start.</p>
+        <table style="border-collapse:collapse; width:820px; max-width:100%;">
           <thead>
             <tr style="background:#E8E8E8;">
               <th style="text-align:left;padding:10px 8px;border-bottom:2px solid #333;">Name</th>
               <th style="text-align:left;padding:10px 8px;border-bottom:2px solid #333;">Handle</th>
               <th style="text-align:right;padding:10px 8px;border-bottom:2px solid #333;">Follower</th>
-              <th style="text-align:right;padding:10px 8px;border-bottom:2px solid #333;">Δ</th>
-              <th style="text-align:right;padding:10px 8px;border-bottom:2px solid #333;">Δ %</th>
+              <th style="text-align:right;padding:10px 8px;border-bottom:2px solid #333;">Δ Woche</th>
+              <th style="text-align:right;padding:10px 8px;border-bottom:2px solid #333;">Δ% Woche</th>
+              <th style="text-align:right;padding:10px 8px;border-bottom:2px solid #333;">Δ Gesamt</th>
+              <th style="text-align:right;padding:10px 8px;border-bottom:2px solid #333;">Δ% Gesamt</th>
             </tr>
           </thead>
           <tbody>{rows}</tbody>
@@ -303,7 +367,7 @@ def build_manager_html(today, all_data, display_names):
         <p style="color:#555; font-size:12px; margin-top:24px;">Overview chart attached.</p>
       </body>
     </html>
-    """.replace('".replace(",",".")', '')
+    """
 
 
 def main():
@@ -384,18 +448,13 @@ def main():
                 print(f"Skipping {handle} — not enough data")
                 continue
 
-            chart_path = make_individual_chart(handle, name, history[handle], logo_arr, tmpdir)
+            chart_path = make_individual_chart(handle, name, history[handle], today, logo_arr, tmpdir)
 
-            day_data = history[handle]
-            sorted_days = sorted(day_data.items())
-            followers = [f for _, f in sorted_days]
-            dates = [d for d, _ in sorted_days]
-            start, end = followers[0], followers[-1]
-            growth = end - start
-            pct = growth / start * 100 if start > 0 else 0
+            st = week_stats(history[handle], today)
+            dates = st["dates"]
             period = f'{dates[0].strftime("%d.%m.%Y")} – {dates[-1].strftime("%d.%m.%Y")}'
 
-            html = build_model_html(name, handle, end, growth, pct, period)
+            html = build_model_html(name, handle, st["end"], st["week_growth"], st["week_pct"], period)
             subject = f"Your Bluesky Growth – {today.strftime('%d.%m.%Y')}"
 
             send_mail_with_attachment(token, sender, email, manager_emails, subject, html, chart_path)
