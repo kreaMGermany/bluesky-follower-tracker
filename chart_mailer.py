@@ -35,6 +35,21 @@ def getenv(name):
     return v
 
 
+def valid_email(addr):
+    """Einfache Validierung: nicht leer, kein Whitespace, genau ein @, Domain mit Punkt."""
+    if not addr:
+        return False
+    s = str(addr).strip()
+    if not s or any(c.isspace() for c in s):
+        return False
+    if s.count("@") != 1:
+        return False
+    local, _, domain = s.partition("@")
+    if not local or not domain or "." not in domain:
+        return False
+    return True
+
+
 def graph_get(token, url):
     r = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=60)
     r.raise_for_status()
@@ -48,6 +63,8 @@ def graph_post(token, url, payload):
         json=payload,
         timeout=60,
     )
+    if not r.ok:
+        print(f"  Graph error {r.status_code}: {r.text}")
     r.raise_for_status()
     return r.json() if r.text else {}
 
@@ -172,7 +189,7 @@ def make_individual_chart(handle, name, day_data, today, logo_arr, tmpdir):
     fig.text(0.07, 0.90, name, color=TEXT, fontsize=21, fontweight='bold', transform=fig.transFigure)
     fig.text(0.07, 0.83, f'@{handle}', color=TEXT2, fontsize=10, transform=fig.transFigure)
     fig.text(0.62, 0.90, f'{end:,} Followers'.replace(',', '.'), color=TEXT, fontsize=14, fontweight='bold', transform=fig.transFigure)
-    fig.text(0.62, 0.83, f'{fmt_signed(growth)} Follower diese Woche ({fmt_signed(round(pct,1))}%)',
+    fig.text(0.62, 0.83, f'{fmt_signed(growth)} followers this week ({fmt_signed(round(pct,1))}%)',
              color=growth_color, fontsize=10, transform=fig.transFigure)
     period = f'{dates[0].strftime("%d.%m.%Y")} – {dates[-1].strftime("%d.%m.%Y")}'
     fig.text(0.07, 0.03, period, color=TEXT2, fontsize=8, transform=fig.transFigure)
@@ -272,7 +289,7 @@ def send_mail_with_attachment(token, sender, to_email, cc_emails, subject, html,
     to_recipients = [{"emailAddress": {"address": to_email.strip()}}]
     cc_recipients = [
         {"emailAddress": {"address": r.strip()}}
-        for r in cc_emails.split(",") if r.strip()
+        for r in cc_emails.split(",") if valid_email(r)
     ]
 
     payload = {
@@ -448,6 +465,10 @@ def main():
                 print(f"Skipping {handle} — not enough data")
                 continue
 
+            if not valid_email(email):
+                print(f"Skipping {name} ({handle}) — invalid email: {email!r}")
+                continue
+
             chart_path = make_individual_chart(handle, name, history[handle], today, logo_arr, tmpdir)
 
             st = week_stats(history[handle], today)
@@ -457,8 +478,12 @@ def main():
             html = build_model_html(name, handle, st["end"], st["week_growth"], st["week_pct"], period)
             subject = f"Your Bluesky Growth – {today.strftime('%d.%m.%Y')}"
 
-            send_mail_with_attachment(token, sender, email, manager_emails, subject, html, chart_path)
-            print(f"✓ Mail sent to {name} ({email})")
+            try:
+                send_mail_with_attachment(token, sender, email, manager_emails, subject, html, chart_path)
+                print(f"✓ Mail sent to {name} ({email})")
+            except Exception as e:
+                print(f"✗ Failed to send to {name} ({email}): {e}")
+                continue
 
         # Generate overview + send to managers
         all_data = {m["handle"]: history[m["handle"]] for m in models if m["handle"] in history and len(history[m["handle"]]) >= 2}
@@ -466,16 +491,22 @@ def main():
 
         manager_html = build_manager_html(today, all_data, display_names)
         # Send overview to first manager (others on CC) - simplest: TO = first, CC = rest
-        manager_list = [r.strip() for r in manager_emails.split(",") if r.strip()]
-        to_manager = manager_list[0]
-        cc_managers = ",".join(manager_list[1:]) if len(manager_list) > 1 else ""
+        manager_list = [r.strip() for r in manager_emails.split(",") if valid_email(r)]
+        if not manager_list:
+            print("✗ No valid manager email found — overview not sent")
+        else:
+            to_manager = manager_list[0]
+            cc_managers = ",".join(manager_list[1:]) if len(manager_list) > 1 else ""
 
-        send_mail_with_attachment(
-            token, sender, to_manager, cc_managers,
-            f"Bluesky Weekly Overview – {today.strftime('%d.%m.%Y')}",
-            manager_html, overview_path
-        )
-        print(f"✓ Overview sent to managers")
+            try:
+                send_mail_with_attachment(
+                    token, sender, to_manager, cc_managers,
+                    f"Bluesky Weekly Overview – {today.strftime('%d.%m.%Y')}",
+                    manager_html, overview_path
+                )
+                print(f"✓ Overview sent to managers")
+            except Exception as e:
+                print(f"✗ Failed to send overview: {e}")
 
     print("DONE")
 
