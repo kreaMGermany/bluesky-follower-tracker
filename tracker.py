@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import requests
 from datetime import datetime, date, timedelta
 from msal import ConfidentialClientApplication
@@ -43,15 +44,26 @@ def get_token():
     return token["access_token"]
 
 
-def get_followers(handle):
+def get_followers(handle, retries=3):
     url = f"https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor={handle}"
-    r = requests.get(url, timeout=60)
-    r.raise_for_status()
-    data = r.json()
-    followers = data.get("followersCount")
-    if followers is None:
-        raise RuntimeError(f"followersCount missing for {handle}")
-    return int(followers)
+    last_err = None
+    for attempt in range(retries):
+        try:
+            r = requests.get(url, timeout=60)
+            if r.status_code in (400, 408, 429, 500, 502, 503, 504):
+                last_err = f"HTTP {r.status_code}"
+                time.sleep(2 * (attempt + 1))
+                continue
+            r.raise_for_status()
+            data = r.json()
+            followers = data.get("followersCount")
+            if followers is None:
+                raise RuntimeError(f"followersCount missing for {handle}")
+            return int(followers)
+        except requests.RequestException as e:
+            last_err = str(e)
+            time.sleep(2 * (attempt + 1))
+    raise RuntimeError(f"get_followers failed for {handle}: {last_err}")
 
 
 def send_mail(token, sender, recipients, subject, html):
@@ -120,7 +132,7 @@ def fmt_pct(p):
     return f"{sign}{p:.2f}%"
 
 
-def build_html(today, results):
+def build_html(today, results, failed):
     valid = [r for r in results if r["delta"] is not None]
 
     top_growth = sorted(
@@ -156,6 +168,14 @@ def build_html(today, results):
         </tr>
         """
 
+    failed_block = ""
+    if failed:
+        items = "".join(f"<li>{f['handle']}: {f['error']}</li>" for f in failed)
+        failed_block = f"""
+        <h3 style="margin:18px 0 6px 0;color:#b00020;">Nicht abrufbar ({len(failed)})</h3>
+        <ul>{items}</ul>
+        """
+
     html = f"""
     <html>
       <body style="font-family:Segoe UI, Arial, sans-serif; color:#111;">
@@ -169,6 +189,8 @@ def build_html(today, results):
 
         <h3 style="margin:18px 0 6px 0;">Biggest Drop</h3>
         <ul>{''.join([bullet(r) for r in biggest_drop]) if biggest_drop else "<li>n/a</li>"}</ul>
+
+        {failed_block}
 
         <h3 style="margin:18px 0 6px 0;">Alle Accounts</h3>
         <table style="border-collapse:collapse; width:780px; max-width:100%;">
@@ -238,10 +260,15 @@ def main():
         history[acc] = sorted(history[acc], key=lambda x: x[0])
 
     results = []
+    failed = []
 
     for acc in accounts:
         handle = acc["handle"]
-        followers = get_followers(handle)
+        try:
+            followers = get_followers(handle)
+        except Exception as e:
+            failed.append({"handle": handle, "error": str(e)})
+            continue
 
         prev = [x for x in history.get(handle, []) if x[0] < today]
         if prev:
@@ -260,7 +287,7 @@ def main():
             "base_date": base_date
         })
 
-    html = build_html(today, results)
+    html = build_html(today, results, failed)
 
     send_mail(
         token,
@@ -270,15 +297,17 @@ def main():
         html
     )
 
-    values = [[today.isoformat(), "'" + r["account"], r["followers"]] for r in results]
+    if results:
+        values = [[today.isoformat(), "'" + r["account"], r["followers"]] for r in results]
+        graph_post(
+            token,
+            f"{GRAPH}/users/{sender}/drive/items/{file_id}/workbook/tables/{table_id}/rows/add",
+            {"values": values}
+        )
 
-    graph_post(
-        token,
-        f"{GRAPH}/users/{sender}/drive/items/{file_id}/workbook/tables/{table_id}/rows/add",
-        {"values": values}
-    )
-
-    print("DONE")
+    if failed:
+        print("FAILED:", json.dumps(failed))
+    print(f"DONE ({len(results)} ok, {len(failed)} failed)")
 
 
 if __name__ == "__main__":
